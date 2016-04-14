@@ -30,6 +30,14 @@ static void busy_wait (int64_t loops);
 static void real_time_sleep (int64_t num, int32_t denom);
 static void real_time_delay (int64_t num, int32_t denom);
 
+/* my code begins */
+static bool less_value(struct list_elem *a, struct list_elem *b);   //prototype function for the comparator
+/* my code ends */
+
+/* my code begins */
+struct list thread_list;    //List to keep track of threads
+/* my code ends */
+
 /* Sets up the timer to interrupt TIMER_FREQ times per second,
    and registers the corresponding interrupt. */
 void
@@ -37,9 +45,13 @@ timer_init (void)
 {
   pit_configure_channel (0, 2, TIMER_FREQ);
   intr_register_ext (0x20, timer_interrupt, "8254 Timer");
+  
+  /* my code begins */
+  list_init(&thread_list);
+  /* my code ends */
 }
 
-/* Calibrates loops_per_tick, used to implement brief delays. */
+/* Calibrates loops_per_tick, used to implement briefcxj g delays. */
 void
 timer_calibrate (void) 
 {
@@ -84,16 +96,43 @@ timer_elapsed (int64_t then)
   return timer_ticks () - then;
 }
 
+
+/* my code begins */
+/* A comparator for comparing the thread's sleep time for the ordered lists */
+bool
+less_value(struct list_elem *a, struct list_elem *b){
+  struct thread *temp_a;
+  struct thread *temp_b;
+  
+  temp_a = list_entry(a, struct thread, elem);
+  temp_b = list_entry(b, struct thread, elem);
+  
+  return temp_a->sleep_ticks < temp_b->sleep_ticks;
+}
+/* my code ends*/
+
+
 /* Sleeps for approximately TICKS timer ticks.  Interrupts must
    be turned on. */
 void
 timer_sleep (int64_t ticks) 
 {
-  int64_t start = timer_ticks ();
+  /* my code begins */
+  
+   struct thread *t = thread_current();
+  int64_t start = timer_ticks();  //start of the timer
+    
 
-  ASSERT (intr_get_level () == INTR_ON);
-  while (timer_elapsed (start) < ticks) 
-    thread_yield ();
+  ASSERT (intr_get_level () == INTR_ON);    //make sure interrupts are on
+  
+  t->sleep_ticks = start + ticks;   //assign sleep time to current thread
+  
+  intr_disable();   
+  list_insert_ordered(&thread_list, &t->elem, less_value, NULL);
+  thread_block();
+  intr_enable();
+  
+  /* my code ends*/
 }
 
 /* Sleeps for approximately MS milliseconds.  Interrupts must be
@@ -165,13 +204,29 @@ timer_print_stats (void)
 {
   printf ("Timer: %"PRId64" ticks\n", timer_ticks ());
 }
-
+
 /* Timer interrupt handler. */
 static void
 timer_interrupt (struct intr_frame *args UNUSED)
 {
+  /* my code begins */
   ticks++;
   thread_tick ();
+  
+  struct thread *t;
+  while(!list_empty(&thread_list)) {
+    
+    t = list_entry(list_front(&thread_list),struct thread, elem);
+    
+    if (timer_ticks() < t->sleep_ticks)
+    break;
+    
+      list_pop_front (&thread_list);
+    thread_unblock(t);
+  }
+  
+  /* my code ends */
+
 }
 
 /* Returns true if LOOPS iterations waits for more than one timer
